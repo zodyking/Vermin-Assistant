@@ -5,6 +5,7 @@ import { Card } from "@astryxdesign/core/Card";
 import { CheckboxInput } from "@astryxdesign/core/CheckboxInput";
 import { EmptyState } from "@astryxdesign/core/EmptyState";
 import { Heading } from "@astryxdesign/core/Heading";
+import { HStack } from "@astryxdesign/core/HStack";
 import { Layout, LayoutContent, LayoutFooter, LayoutHeader } from "@astryxdesign/core/Layout";
 import { SegmentedControl, SegmentedControlItem } from "@astryxdesign/core/SegmentedControl";
 import { Selector } from "@astryxdesign/core/Selector";
@@ -30,7 +31,6 @@ import {
 } from "./api";
 import { readColorMode, type ColorMode } from "./color-mode";
 import { AnimalIcon } from "./icons";
-import { Orb } from "./Orb";
 import { Spectrum } from "./Spectrum";
 import { LiveEngine } from "./synth";
 import { DEFAULT_TARGETS, VERMIN, formatKhz, type Targets, type VerminId } from "./targets";
@@ -114,10 +114,6 @@ export function App() {
   const [loading, setLoading] = useState(true);
   const [panel, setPanel] = useState<PanelId>("sound");
   const [demoing, setDemoing] = useState(false);
-  const [pulse, setPulse] = useState(55);
-  const [hunt, setHunt] = useState(false);
-  const [huntId, setHuntId] = useState<VerminId | null>(null);
-  const [peakLabel, setPeakLabel] = useState("—");
   const [engine] = useState(() => new LiveEngine());
 
   useEffect(() => {
@@ -202,38 +198,7 @@ export function App() {
   }, [engine, volume]);
 
   useEffect(() => {
-    engine.setIntensity(pulse / 100);
-  }, [engine, pulse]);
-
-  useEffect(() => {
     engine.show(Boolean(status?.patrol.playing) || demoing);
-  }, [demoing, engine, status?.patrol.playing]);
-
-  useEffect(() => {
-    if (!hunt) {
-      setHuntId(null);
-      return;
-    }
-    let index = 0;
-    setHuntId(VERMIN[0]?.id ?? null);
-    const timer = window.setInterval(() => {
-      index = (index + 1) % VERMIN.length;
-      setHuntId(VERMIN[index]?.id ?? null);
-    }, 1600);
-    return () => window.clearInterval(timer);
-  }, [hunt]);
-
-  useEffect(() => {
-    const liveNow = Boolean(status?.patrol.playing) || demoing;
-    if (!liveNow) {
-      setPeakLabel("—");
-      return;
-    }
-    const timer = window.setInterval(() => {
-      const peak = engine.peakFrequency();
-      setPeakLabel(peak ? formatKhz(peak) : "—");
-    }, 120);
-    return () => window.clearInterval(timer);
   }, [demoing, engine, status?.patrol.playing]);
 
   useEffect(() => () => engine.dispose(), [engine]);
@@ -266,10 +231,8 @@ export function App() {
                 <div className="topbar-mid">
                   {status ? (
                     <>
-                      <span className="hud-chip" data-live={live}>
-                        <StatusDot variant={dotVariant(status)} label={statusLine} isPulsing={live} />
-                        {live ? "Neural live" : statusLine}
-                      </span>
+                      <StatusDot variant={dotVariant(status)} label={statusLine} isPulsing={playing} />
+                      <span className="topbar-status">{statusLine}</span>
                       <span className="topbar-presence">
                         <Badge label={presenceLabel(status)} variant={status.presence.someone_home ? "neutral" : "blue"} />
                       </span>
@@ -290,7 +253,7 @@ export function App() {
           footer={
             settings ? (
               <LayoutFooter label="Playback">
-                <div className="deck">
+                <HStack gap={3} vAlign="center" wrap="wrap">
                   <Text type="body">{speakerLine}</Text>
                   <StackItem size="fill">
                     <Slider
@@ -309,64 +272,60 @@ export function App() {
                       width="100%"
                     />
                   </StackItem>
-                  <div className="deck-actions">
-                    <Button
-                      label={demoing ? "Stop demo" : "Demo"}
-                      variant="secondary"
-                      clickAction={() => {
-                        if (demoing) {
-                          engine.setAudible(false);
-                          if (!playing) engine.stop();
-                          setDemoing(false);
+                  <Button
+                    label={demoing ? "Stop demo" : "Demo"}
+                    variant="secondary"
+                    clickAction={() => {
+                      if (demoing) {
+                        engine.setAudible(false);
+                        if (!playing) engine.stop();
+                        setDemoing(false);
+                        return;
+                      }
+                      engine.setTargets(targets);
+                      engine.setLevel(volume / 100);
+                      engine.setAudible(true);
+                      engine.start();
+                      setDemoing(true);
+                    }}
+                  />
+                  <Button
+                    label={playing ? "Pause" : "Play"}
+                    variant="primary"
+                    isDisabled={settings.players.length === 0}
+                    clickAction={async () => {
+                      try {
+                        if (playing) {
+                          if (!demoing) engine.stop();
+                          applyStatus(await stopPlayback());
                           return;
                         }
                         engine.setTargets(targets);
-                        engine.setIntensity(pulse / 100);
-                        engine.setLevel(volume / 100);
-                        engine.setAudible(true);
+                        if (!demoing) engine.setAudible(false);
                         engine.start();
-                        setDemoing(true);
-                      }}
-                    />
-                    <Button
-                      label={playing ? "Pause" : "Play"}
-                      variant="primary"
-                      isDisabled={settings.players.length === 0}
-                      clickAction={async () => {
-                        try {
-                          if (playing) {
-                            if (!demoing) engine.stop();
-                            applyStatus(await stopPlayback());
-                            return;
-                          }
-                          engine.setTargets(targets);
-                          engine.setIntensity(pulse / 100);
-                          if (!demoing) engine.setAudible(false);
-                          engine.start();
-                          applyStatus(await playNow(settings));
-                        } catch (reason) {
-                          if (!demoing) engine.stop();
-                          setError(reason instanceof Error ? reason.message : "Couldn't play");
-                        }
-                      }}
-                    />
-                    <Button
-                      label="Stop"
-                      variant="secondary"
-                      isDisabled={settings.players.length === 0 && !demoing}
-                      clickAction={async () => {
-                        try {
-                          engine.setAudible(false);
-                          engine.stop();
-                          setDemoing(false);
-                          if (settings.players.length > 0) applyStatus(await stopPlayback());
-                        } catch (reason) {
-                          setError(reason instanceof Error ? reason.message : "Couldn't stop");
-                        }
-                      }}
-                    />
-                  </div>
-                </div>
+                        applyStatus(await playNow(settings));
+                      } catch (reason) {
+                        if (!demoing) engine.stop();
+                        setError(reason instanceof Error ? reason.message : "Couldn't play");
+                      }
+                    }}
+                  />
+                  <Button
+                    label="Stop"
+                    variant="secondary"
+                    isDisabled={settings.players.length === 0 && !demoing}
+                    clickAction={async () => {
+                      try {
+                        engine.setAudible(false);
+                        engine.stop();
+                        setDemoing(false);
+                        if (settings.players.length > 0) applyStatus(await stopPlayback());
+                      } catch (reason) {
+                        setError(reason instanceof Error ? reason.message : "Couldn't stop");
+                      }
+                    }}
+                  />
+                </HStack>
               </LayoutFooter>
             ) : null
           }
@@ -493,62 +452,13 @@ export function App() {
 
                   {panel === "sound" ? (
                     <div className="console">
-                      <section className="stage" aria-label="Neural core">
-                        <Orb
-                          active={live}
-                          intensity={pulse}
-                          label={live ? "Engaged" : "Standby"}
-                          peak={live && peakLabel !== "—" ? peakLabel : formatKhz(activeUpper(targets))}
-                        />
-                        <div className="stage-meta">
-                          <h2>Neural deterrent core</h2>
-                          <p>
-                            Chirps slam the upper hearing edge of every selected pest. Raise pulse for denser fire. Hunt
-                            mode sweeps focus across the board.
-                          </p>
-                          <div className="feature-row">
-                            <div className="feature">
-                              <label htmlFor="pulse">Neural pulse</label>
-                              <Slider
-                                label="Neural pulse"
-                                isLabelHidden
-                                min={15}
-                                max={100}
-                                step={1}
-                                value={pulse}
-                                valueDisplay="text"
-                                formatValue={(value: number) => `${value}%`}
-                                onChange={(value: number) => {
-                                  setPulse(value);
-                                  engine.setIntensity(value / 100);
-                                }}
-                                width="100%"
-                              />
-                            </div>
-                            <div className="feature">
-                              <label>Hunt sweep</label>
-                              <Switch
-                                label={hunt ? "Scanning" : "Armed"}
-                                value={hunt}
-                                onChange={setHunt}
-                                labelPosition="start"
-                              />
-                            </div>
-                          </div>
-                        </div>
-                      </section>
                       <section className="preset" aria-label="Animals">
-                        <h2>Target matrix</h2>
+                        <h2>Preset</h2>
                         <div className="strips">
                           {VERMIN.map((spec) => {
                             const setting = targets[spec.id];
                             return (
-                              <div
-                                key={spec.id}
-                                className="strip"
-                                data-on={setting.enabled}
-                                data-hunt={hunt && huntId === spec.id}
-                              >
+                              <div key={spec.id} className="strip" data-on={setting.enabled}>
                                 <div className="fader">
                                   <Slider
                                     orientation="vertical"
@@ -596,11 +506,4 @@ function presenceLabel(status: Status): string {
   if (status.presence.unknown) return "Unknown";
   if (!status.presence.someone_home) return "Nobody home";
   return "Someone home";
-}
-
-function activeUpper(targets: Targets): number {
-  const ranked = VERMIN.filter((spec) => targets[spec.id]?.enabled && targets[spec.id].level > 0).sort(
-    (left, right) => right.upper - left.upper,
-  );
-  return ranked[0]?.upper ?? 0;
 }
