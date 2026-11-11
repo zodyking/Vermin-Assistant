@@ -25,6 +25,7 @@ export class LiveEngine {
   private visual = false;
   private audible = false;
   private level = 0.35;
+  private intensity = 0.55;
   private random = Math.random;
 
   show(active: boolean): void {
@@ -39,6 +40,10 @@ export class LiveEngine {
   setLevel(value: number): void {
     this.level = Math.max(0, Math.min(1, value));
     this.applyMonitor();
+  }
+
+  setIntensity(value: number): void {
+    this.intensity = Math.max(0.15, Math.min(1, value));
   }
 
   nyquist(): number {
@@ -141,7 +146,8 @@ export class LiveEngine {
         until: this.cursor + duration,
         mag: level,
       });
-      this.cursor += duration + 0.012 + this.random() * 0.07;
+      const gapScale = 1.35 - this.intensity;
+      this.cursor += duration + (0.008 + this.random() * 0.05) * gapScale;
     }
     const now = context.currentTime;
     this.bursts = this.bursts.filter((burst) => burst.until > now);
@@ -208,14 +214,17 @@ export class LiveEngine {
     }
     context.setTransform(ratio, 0, 0, ratio, 0, 0);
     context.clearRect(0, 0, width, height);
-    context.fillStyle = "#071016";
+    const night = context.createLinearGradient(0, 0, width, height);
+    night.addColorStop(0, "#050914");
+    night.addColorStop(1, "#0a0614");
+    context.fillStyle = night;
     context.fillRect(0, 0, width, height);
 
     const plot = { left: 46, right: 12, top: 16, bottom: 28 };
     const plotWidth = width - plot.left - plot.right;
     const plotHeight = height - plot.top - plot.bottom;
 
-    context.strokeStyle = "rgba(3, 169, 244, 0.16)";
+    context.strokeStyle = "rgba(92, 225, 255, 0.12)";
     context.lineWidth = 1;
     context.font = "11px system-ui, Segoe UI, sans-serif";
     context.fillStyle = "rgba(225, 225, 225, 0.55)";
@@ -280,17 +289,23 @@ export class LiveEngine {
       const amount = values[bar] ?? 0;
       const barHeight = Math.max(1, amount * plotHeight);
       const x = plot.left + (bar / bars) * plotWidth;
-      context.fillStyle = amount > 0.72 ? "#e8f8ff" : "#03a9f4";
+      const hot = amount > 0.72;
+      context.fillStyle = hot ? "#e8f8ff" : amount > 0.4 ? "#5ce1ff" : "#9b5cff";
       context.globalAlpha = 0.35 + amount * 0.65;
+      context.shadowColor = hot ? "#5ce1ff" : "#9b5cff";
+      context.shadowBlur = 12 * amount;
       context.fillRect(x, plot.top + plotHeight - barHeight, barWidth, barHeight);
     }
+    context.shadowBlur = 0;
     context.globalAlpha = 1;
 
     if (this.targets) {
       for (const spec of activeSpecs(this.targets)) {
         const played = Math.min(spec.upper, span * 0.9);
         const x = plot.left + (played / span) * plotWidth;
-        context.strokeStyle = "rgba(3, 169, 244, 0.85)";
+        context.strokeStyle = "rgba(210, 77, 255, 0.9)";
+        context.shadowColor = "#d24dff";
+        context.shadowBlur = 10;
         context.beginPath();
         context.moveTo(x, plot.top);
         context.lineTo(x, plot.top + plotHeight);
@@ -300,6 +315,7 @@ export class LiveEngine {
         context.arc(x, plot.top + 6, 3.5, 0, Math.PI * 2);
         context.fill();
       }
+      context.shadowBlur = 0;
     }
   };
 
